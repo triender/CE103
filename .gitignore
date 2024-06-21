@@ -1,0 +1,75 @@
+# Ignore build directories
+/build/
+/*.out
+
+# Ignore IDF environment and temporary files
+/coverage
+/test-results
+/htmlcov
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*~
+__pycache__
+*.bak
+
+# Ignore VS Code files
+.vscode/
+*.code-workspace
+
+# Ignore Eclipse IDE files
+.cproject
+.project
+.settings/
+
+# Ignore CLion IDE files
+.idea/
+*.iml
+cmake-build-*/
+
+# Ignore other editor/IDE specific files
+*.DS_Store
+Thumbs.db
+
+# Ignore CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Ignore compiled binary files
+*.elf
+*.bin
+*.map
+
+# Ignore SDK configuration files
+sdkconfig
+sdkconfig.old
+
+# Ignore ESP-IDF component build files
+components/*/build/
+
+# Ignore logs and temporary files
+*.log
+*.tmp
+
+# Ignore object files
+*.o
+*.obj
+*.d
+*.d.ts
+
+# Ignore Python virtual environment
+.venv/
+.env/
+
+# Ignore generated documentation
+doc/
+
+# Ignore dump files
+*.dump
+
+# Ignore backup files
+*.bak
+*.orig
