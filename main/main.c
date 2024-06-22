@@ -23,11 +23,17 @@
 
 #define TAG "SnakeGame"
 
+// #define BUTTON_UP_PIN 4
+// #define BUTTON_DOWN_PIN 5
+// #define BUTTON_LEFT_PIN 15
+// #define BUTTON_RIGHT_PIN 18
+// #define BUTTON_RESET_PIN 2
+
 #define BUTTON_UP_PIN 4
-#define BUTTON_DOWN_PIN 5
-#define BUTTON_LEFT_PIN 15
+#define BUTTON_DOWN_PIN 2
+#define BUTTON_LEFT_PIN 5
 #define BUTTON_RIGHT_PIN 18
-#define BUTTON_RESET_PIN 2
+#define BUTTON_RESET_PIN 15
 #define BUZZER_PIN 19
 
 #define RIGHT 0
@@ -64,15 +70,29 @@ typedef struct SNAKE
 FOOD food;
 SNAKE snake;
 
-uint8_t SnakeBody[] = {
-	0xFF,
-	0xFF,
-	0xFF,
-	0xFF,
-	0xFF,
-	0xFF,
-	0xFF,
-	0xFF};
+uint8_t SnakeHead[] = {
+	0b11111111,
+	0b10011001,
+	0b10011001,
+	0b11111111,
+	0b11111111,
+	0b11111111,
+	0b11111111,
+	0b11111111
+};
+
+uint8_t SnakeTail[] = {
+	0b00000000,
+	0b00000000,
+	0b00001000,
+	0b00001000,
+	0b00011000,
+	0b00111100,
+	0b00111110,
+	0b01111111
+};
+
+uint8_t SnakeBody[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 uint8_t foodEle[] = {
 	0b00001111,
@@ -111,6 +131,149 @@ void updateBuffer(uint8_t *buffer, int x, int y, uint8_t *charBitmap)
 				int buffer_index = (x + j) + ((y + i) / 8) * 128;
 				buffer[buffer_index] |= (1 << ((y + i) % 8));
 			}
+		}
+	}
+}
+
+void updateHead(uint8_t *buffer, int x, int y, uint8_t *charBitmap, int dir)
+{
+	uint8_t rotatedBitmap[8] = {0};
+
+	// Rotate bitmap based on direction
+	switch (dir)
+	{
+	case LEFT:
+		// No rotation needed for RIGHT
+		for (int i = 0; i < 8; i++)
+		{
+			rotatedBitmap[i] = charBitmap[i];
+		}
+		break;
+	case DOWN:
+		// Rotate 90 degrees clockwise
+		for (int i = 0; i < 8; i++)
+		{
+			for (int j = 0; j < 8; j++)
+			{
+				if (charBitmap[j] & (1 << i))
+				{
+					rotatedBitmap[i] |= (1 << (7 - j));
+				}
+			}
+		}
+		break;
+	case RIGHT:
+		// Rotate 180 degrees
+		for (int i = 0; i < 8; i++)
+		{
+			for (int j = 0; j < 8; j++)
+			{
+				if (charBitmap[i] & (1 << j))
+				{
+					rotatedBitmap[7 - i] |= (1 << (7 - j));
+				}
+			}
+		}
+		break;
+	case UP:
+		// Rotate 90 degrees counter-clockwise
+		for (int i = 0; i < 8; i++)
+		{
+			for (int j = 0; j < 8; j++)
+			{
+				if (charBitmap[j] & (1 << i))
+				{
+					rotatedBitmap[7 - i] |= (1 << j);
+				}
+			}
+		}
+		break;
+	}
+
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 8; j++)
+		{
+			int buffer_index = (x + j) + ((y + i) / 8) * 128;
+
+			if (rotatedBitmap[j] & (1 << i))
+				buffer[buffer_index] |= (1 << ((y + i) % 8));
+			else
+				buffer[buffer_index] &= ~(1 << ((y + i) % 8));
+		}
+	}
+}
+
+void updateTail(uint8_t *buffer, int x, int y, uint8_t *charBitmap){
+	int d = RIGHT;
+	int width = 128;
+int height = 56;
+
+// Determine the direction of the tail
+if (snake.y[snake.node - 1] == snake.y[snake.node - 2]) {
+    // Tail is in the same row as the second last node
+    if ((snake.x[snake.node - 1] < snake.x[snake.node - 2] && 
+         snake.x[snake.node - 2] - snake.x[snake.node - 1] < width / 2) ||
+        (snake.x[snake.node - 1] > snake.x[snake.node - 2] && 
+         snake.x[snake.node - 1] - snake.x[snake.node - 2] > width / 2)) {
+        d = RIGHT;
+    } else {
+        d = LEFT;
+    }
+} else {
+    // Tail is in the same column as the second last node
+    if ((snake.y[snake.node - 1] > snake.y[snake.node - 2] && 
+         snake.y[snake.node - 1] - snake.y[snake.node - 2] < height / 2) ||
+        (snake.y[snake.node - 1] < snake.y[snake.node - 2] && 
+         snake.y[snake.node - 2] - snake.y[snake.node - 1] > height / 2)) {
+        d = UP;
+    } else {
+        d = DOWN;
+    }
+}
+	uint8_t rotatedBitmap[8] = {0};
+
+	// Rotate bitmap based on direction
+	switch (d)
+	{
+	case RIGHT:
+		// No rotation needed for RIGHT
+		for (int i = 0; i < 8; i++)
+			rotatedBitmap[i] = charBitmap[i];
+		break;
+	case UP:
+		// Rotate 90 degrees clockwise
+		for (int i = 0; i < 8; i++)
+			for (int j = 0; j < 8; j++)
+				if (charBitmap[j] & (1 << i))
+					rotatedBitmap[i] |= (1 << (7 - j));
+		break;
+	case LEFT:
+		// Rotate 180 degrees
+		for (int i = 0; i < 8; i++)
+			for (int j = 0; j < 8; j++)
+				if (charBitmap[i] & (1 << j))
+					rotatedBitmap[7 - i] |= (1 << (7 - j));
+		break;
+	case DOWN:
+		// Rotate 90 degrees counter-clockwise
+		for (int i = 0; i < 8; i++)
+			for (int j = 0; j < 8; j++)
+				if (charBitmap[j] & (1 << i))
+					rotatedBitmap[7 - i] |= (1 << j);
+		break;
+	}
+
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 8; j++)
+		{
+			int buffer_index = (x + j) + ((y + i) / 8) * 128;
+
+			if (rotatedBitmap[j] & (1 << i))
+				buffer[buffer_index] |= (1 << ((y + i) % 8));
+			else
+				buffer[buffer_index] &= ~(1 << ((y + i) % 8));
 		}
 	}
 }
@@ -235,10 +398,11 @@ void snakeGame()
 		ESP_LOGI(TAG, "Game speed %d", gamespeed);
 		play_tone(1000, 100);
 		generateFood();
+		ESP_LOGI(TAG, "%d\n", snake.node);
 	}
 
 	// Checks for collision with the body
-	for (int i = 1; i < snake.node; i++)
+	for (int i = 1; i < snake.node - 1; i++)
 		if (snake.x[0] == snake.x[i] && snake.y[0] == snake.y[i])
 			isGameOver = true;
 
@@ -247,6 +411,11 @@ void snakeGame()
 	{
 		snake.x[i] = snake.x[i - 1];
 		snake.y[i] = snake.y[i - 1];
+	}
+
+	ESP_LOGI(TAG, "len: %d ", snake.node);
+	for (int i = 0; i < snake.node; i++){
+		ESP_LOGI(TAG, "%d %d %d\n", i, snake.x[i], snake.y[i]);
 	}
 }
 
@@ -310,7 +479,7 @@ void setup()
 	// Initialize snake
 	snake.x[0] = 64;
 	snake.y[0] = 32;
-	snake.x[1] = 56;
+	snake.x[1] = 64;
 	snake.y[1] = 32;
 	snake.dir = RIGHT;
 	snake.node = 2;
@@ -321,96 +490,113 @@ void setup()
 }
 
 // Function to save high score
-void save_high_score(int score) {
-    // Initialize NVS
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        // NVS partition was truncated and needs to be erased
-        // Retry nvs_flash_init
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(err);
+void save_high_score(int score)
+{
+	// Initialize NVS
+	esp_err_t err = nvs_flash_init();
+	if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND)
+	{
+		// NVS partition was truncated and needs to be erased
+		// Retry nvs_flash_init
+		ESP_ERROR_CHECK(nvs_flash_erase());
+		err = nvs_flash_init();
+	}
+	ESP_ERROR_CHECK(err);
 
-    // Open NVS handle
-    nvs_handle_t my_handle;
-    err = nvs_open("storage", NVS_READWRITE, &my_handle);
-    if (err != ESP_OK) {
-        ESP_LOGI(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(err));
-    } else {
-        int high_score = 0;
-        // Read the current high score
-        err = nvs_get_i32(my_handle, "high_score", &high_score);
-        switch (err) {
-            case ESP_OK:
-                ESP_LOGI(TAG, "Current high score = %d", high_score);
-                break;
-            case ESP_ERR_NVS_NOT_FOUND:
-                ESP_LOGI(TAG, "The value is not initialized yet!");
-                break;
-            default :
-                ESP_LOGI(TAG, "Error (%s) reading!", esp_err_to_name(err));
-        }
+	// Open NVS handle
+	nvs_handle_t my_handle;
+	err = nvs_open("storage", NVS_READWRITE, &my_handle);
+	if (err != ESP_OK)
+	{
+		ESP_LOGI(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(err));
+	}
+	else
+	{
+		int high_score = 0;
+		// Read the current high score
+		err = nvs_get_i32(my_handle, "high_score", &high_score);
+		switch (err)
+		{
+		case ESP_OK:
+			ESP_LOGI(TAG, "Current high score = %d", high_score);
+			break;
+		case ESP_ERR_NVS_NOT_FOUND:
+			ESP_LOGI(TAG, "The value is not initialized yet!");
+			break;
+		default:
+			ESP_LOGI(TAG, "Error (%s) reading!", esp_err_to_name(err));
+		}
 
-        // Check if the new score is higher and update if it is
-        if (score > high_score) {
-            ESP_LOGI(TAG, "New high score = %d", score);
-            err = nvs_set_i32(my_handle, "high_score", score);
-            if (err != ESP_OK) {
-                ESP_LOGI(TAG, "Failed to write new high score!");
-            }
+		// Check if the new score is higher and update if it is
+		if (score > high_score)
+		{
+			ESP_LOGI(TAG, "New high score = %d", score);
+			err = nvs_set_i32(my_handle, "high_score", score);
+			if (err != ESP_OK)
+			{
+				ESP_LOGI(TAG, "Failed to write new high score!");
+			}
 
-            // Commit written value.
-            err = nvs_commit(my_handle);
-            if (err != ESP_OK) {
-                ESP_LOGI(TAG, "Failed to commit new high score!");
-            }
-        } else {
-            ESP_LOGI(TAG, "High score remains = %d", high_score);
-        }
+			// Commit written value.
+			err = nvs_commit(my_handle);
+			if (err != ESP_OK)
+			{
+				ESP_LOGI(TAG, "Failed to commit new high score!");
+			}
+		}
+		else
+		{
+			ESP_LOGI(TAG, "High score remains = %d", high_score);
+		}
 
-        // Close NVS handle
-        nvs_close(my_handle);
-    }
+		// Close NVS handle
+		nvs_close(my_handle);
+	}
 }
 
 // Function to get the high score
-int get_high_score() {
-    // Initialize NVS
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        // NVS partition was truncated and needs to be erased
-        // Retry nvs_flash_init
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(err);
+int get_high_score()
+{
+	// Initialize NVS
+	esp_err_t err = nvs_flash_init();
+	if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND)
+	{
+		// NVS partition was truncated and needs to be erased
+		// Retry nvs_flash_init
+		ESP_ERROR_CHECK(nvs_flash_erase());
+		err = nvs_flash_init();
+	}
+	ESP_ERROR_CHECK(err);
 
-    // Open NVS handle
-    nvs_handle_t my_handle;
-    err = nvs_open("storage", NVS_READWRITE, &my_handle);
-    int high_score = 0;
-    if (err != ESP_OK) {
-        ESP_LOGI(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(err));
-    } else {
-        // Read the current high score
-        err = nvs_get_i32(my_handle, "high_score", &high_score);
-        switch (err) {
-            case ESP_OK:
-                ESP_LOGI(TAG, "Current high score = %d", high_score);
-                break;
-            case ESP_ERR_NVS_NOT_FOUND:
-                ESP_LOGI(TAG, "The value is not initialized yet!");
-                high_score = 0;
-                break;
-            default :
-                ESP_LOGI(TAG, "Error (%s) reading!", esp_err_to_name(err));
-        }
+	// Open NVS handle
+	nvs_handle_t my_handle;
+	err = nvs_open("storage", NVS_READWRITE, &my_handle);
+	int high_score = 0;
+	if (err != ESP_OK)
+	{
+		ESP_LOGI(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(err));
+	}
+	else
+	{
+		// Read the current high score
+		err = nvs_get_i32(my_handle, "high_score", &high_score);
+		switch (err)
+		{
+		case ESP_OK:
+			ESP_LOGI(TAG, "Current high score = %d", high_score);
+			break;
+		case ESP_ERR_NVS_NOT_FOUND:
+			ESP_LOGI(TAG, "The value is not initialized yet!");
+			high_score = 0;
+			break;
+		default:
+			ESP_LOGI(TAG, "Error (%s) reading!", esp_err_to_name(err));
+		}
 
-        // Close NVS handle
-        nvs_close(my_handle);
-    }
-    return high_score;
+		// Close NVS handle
+		nvs_close(my_handle);
+	}
+	return high_score;
 }
 
 void resetGame()
@@ -428,7 +614,7 @@ void resetGame()
 	// Reset snake position and length
 	snake.x[0] = 64;
 	snake.y[0] = 32;
-	snake.x[1] = 56;
+	snake.x[1] = 64;
 	snake.y[1] = 32;
 	snake.dir = RIGHT;
 	snake.node = 2;
@@ -457,9 +643,11 @@ void gameOver()
 void draw()
 {
 	memset(buffer, 0, sizeof(buffer)); // Clear buffer
-
 	for (i = 0; i < snake.node; i++)
 		updateBuffer(buffer, snake.x[i], snake.y[i], SnakeBody);
+	updateHead(buffer, snake.x[0], snake.y[0], SnakeHead, dir);
+	if(snake.node > 2)
+		updateTail(buffer, snake.x[snake.node - 1], snake.y[snake.node - 1], SnakeTail);
 	foodElement(food.x, food.y, buffer);
 
 	char text[17];
@@ -492,11 +680,9 @@ void app_main(void)
 
 		ssd1306_clear_screen(&dev, false);
 		gameOver();
-		play_melody_alt(notes, durations, 8);
+		play_melody_alt(endSound, endSoundD, 8);
 		while (isGameOver)
-		{
 			gameOver();
-		}
 		resetGame();
 		ESP_LOGI(TAG, "Game Over triggered. Resetting game...");
 	}
