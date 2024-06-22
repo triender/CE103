@@ -23,17 +23,18 @@
 
 #define TAG "SnakeGame"
 
-// #define BUTTON_UP_PIN 4
-// #define BUTTON_DOWN_PIN 5
-// #define BUTTON_LEFT_PIN 15
-// #define BUTTON_RIGHT_PIN 18
-// #define BUTTON_RESET_PIN 2
-
 #define BUTTON_UP_PIN 4
-#define BUTTON_DOWN_PIN 2
-#define BUTTON_LEFT_PIN 5
+#define BUTTON_DOWN_PIN 5
+#define BUTTON_LEFT_PIN 15
 #define BUTTON_RIGHT_PIN 18
-#define BUTTON_RESET_PIN 15
+#define BUTTON_RESET_PIN 2
+
+// #define BUTTON_UP_PIN 4
+// #define BUTTON_DOWN_PIN 2
+// #define BUTTON_LEFT_PIN 5
+// #define BUTTON_RIGHT_PIN 18
+// #define BUTTON_RESET_PIN 15
+
 #define BUZZER_PIN 19
 
 #define RIGHT 0
@@ -78,8 +79,7 @@ uint8_t SnakeHead[] = {
 	0b11111111,
 	0b11111111,
 	0b11111111,
-	0b11111111
-};
+	0b11111111};
 
 uint8_t SnakeTail[] = {
 	0b00000000,
@@ -89,10 +89,27 @@ uint8_t SnakeTail[] = {
 	0b00011000,
 	0b00111100,
 	0b00111110,
-	0b01111111
-};
+	0b01111111};
 
-uint8_t SnakeBody[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+uint8_t SnakeCorner[] = {
+	0b11000000,
+	0b11110000,
+	0b11111100,
+	0b11111100,
+	0b11111110,
+	0b11111110,
+	0b11111111,
+	0b11111111};
+
+uint8_t SnakeBody[] = {
+	0b11111111,
+	0b11111111,
+	0b11111111,
+	0b11111111,
+	0b11111111,
+	0b11111111,
+	0b11111111,
+	0b11111111};
 
 uint8_t foodEle[] = {
 	0b00001111,
@@ -135,12 +152,12 @@ void updateBuffer(uint8_t *buffer, int x, int y, uint8_t *charBitmap)
 	}
 }
 
-void updateHead(uint8_t *buffer, int x, int y, uint8_t *charBitmap, int dir)
+void updateHead(uint8_t *buffer, int x, int y, uint8_t *charBitmap)
 {
 	uint8_t rotatedBitmap[8] = {0};
 
 	// Rotate bitmap based on direction
-	switch (dir)
+	switch (snake.dir)
 	{
 	case LEFT:
 		// No rotation needed for RIGHT
@@ -204,33 +221,43 @@ void updateHead(uint8_t *buffer, int x, int y, uint8_t *charBitmap, int dir)
 	}
 }
 
-void updateTail(uint8_t *buffer, int x, int y, uint8_t *charBitmap){
+void updateTail(uint8_t *buffer, int x, int y, uint8_t *charBitmap)
+{
 	int d = RIGHT;
 	int width = 128;
-int height = 56;
+	int height = 56;
 
-// Determine the direction of the tail
-if (snake.y[snake.node - 1] == snake.y[snake.node - 2]) {
-    // Tail is in the same row as the second last node
-    if ((snake.x[snake.node - 1] < snake.x[snake.node - 2] && 
-         snake.x[snake.node - 2] - snake.x[snake.node - 1] < width / 2) ||
-        (snake.x[snake.node - 1] > snake.x[snake.node - 2] && 
-         snake.x[snake.node - 1] - snake.x[snake.node - 2] > width / 2)) {
-        d = RIGHT;
-    } else {
-        d = LEFT;
-    }
-} else {
-    // Tail is in the same column as the second last node
-    if ((snake.y[snake.node - 1] > snake.y[snake.node - 2] && 
-         snake.y[snake.node - 1] - snake.y[snake.node - 2] < height / 2) ||
-        (snake.y[snake.node - 1] < snake.y[snake.node - 2] && 
-         snake.y[snake.node - 2] - snake.y[snake.node - 1] > height / 2)) {
-        d = UP;
-    } else {
-        d = DOWN;
-    }
-}
+	// Determine the direction of the tail
+	if (snake.y[snake.node - 1] == snake.y[snake.node - 2])
+	{
+		// Tail is in the same row as the second last node
+		if ((snake.x[snake.node - 1] < snake.x[snake.node - 2] &&
+			 snake.x[snake.node - 2] - snake.x[snake.node - 1] < width / 2) ||
+			(snake.x[snake.node - 1] > snake.x[snake.node - 2] &&
+			 snake.x[snake.node - 1] - snake.x[snake.node - 2] > width / 2))
+		{
+			d = RIGHT;
+		}
+		else
+		{
+			d = LEFT;
+		}
+	}
+	else
+	{
+		// Tail is in the same column as the second last node
+		if ((snake.y[snake.node - 1] > snake.y[snake.node - 2] &&
+			 snake.y[snake.node - 1] - snake.y[snake.node - 2] < height / 2) ||
+			(snake.y[snake.node - 1] < snake.y[snake.node - 2] &&
+			 snake.y[snake.node - 2] - snake.y[snake.node - 1] > height / 2))
+		{
+			d = UP;
+		}
+		else
+		{
+			d = DOWN;
+		}
+	}
 	uint8_t rotatedBitmap[8] = {0};
 
 	// Rotate bitmap based on direction
@@ -276,6 +303,111 @@ if (snake.y[snake.node - 1] == snake.y[snake.node - 2]) {
 				buffer[buffer_index] &= ~(1 << ((y + i) % 8));
 		}
 	}
+}
+
+void updateCorner(uint8_t *buffer, uint8_t *charBitmap)
+{
+	int width = 128;
+    int height = 56;
+    int node_size = 8;
+    int d = -1; // Initialize direction variable
+
+    // Iterate through the snake's body to identify corner nodes
+    for (int i = 1; i < snake.node - 1; i++)
+    {
+        int current_x = snake.x[i];
+        int current_y = snake.y[i];
+        int next_x = snake.x[i + 1];
+        int next_y = snake.y[i + 1];
+        int prev_x = snake.x[i - 1];
+        int prev_y = snake.y[i - 1];
+
+        // Check if the current node is a corner
+        if ((current_x != next_x && current_y != prev_y) || (current_x != prev_x && current_y != next_y))
+        {
+            // Determine the direction from the previous node to the current node
+            int from_direction;
+            if (current_x == (prev_x + node_size) % width)
+                from_direction = RIGHT;
+            else if (current_x == (prev_x - node_size + width) % width)
+                from_direction = LEFT;
+            else if (current_y == (prev_y + node_size) % height)
+                from_direction = DOWN;
+            else
+                from_direction = UP;
+
+            // Determine the direction from the current node to the next node
+            int to_direction;
+            if (next_x == (current_x + node_size) % width)
+                to_direction = RIGHT;
+            else if (next_x == (current_x - node_size + width) % width)
+                to_direction = LEFT;
+            else if (next_y == (current_y + node_size) % height)
+                to_direction = DOWN;
+            else
+                to_direction = UP;
+
+            // Determine the type of corner and set direction
+            if (from_direction == RIGHT && to_direction == DOWN)
+                d = 4; // DOWNRIGHT x
+            else if (from_direction == RIGHT && to_direction == UP)
+                d = 1; // UPRIGHT v
+            else if (from_direction == LEFT && to_direction == DOWN)
+                d = 4; // DOWNLEFT v
+            else if (from_direction == LEFT && to_direction == UP)
+                d = 1; // UPLEFT x
+            else if (from_direction == UP && to_direction == RIGHT)
+                d = 1; // UPRIGHT
+            else if (from_direction == UP && to_direction == LEFT)
+                d = 2; // UPLEFT v
+            else if (from_direction == DOWN && to_direction == RIGHT)
+                d = 3; // DOWNRIGHT v
+            else if (from_direction == DOWN && to_direction == LEFT)
+                d = 4; // DOWNLEFT
+
+            // Create rotated bitmap based on direction
+            uint8_t rotatedBitmap[8] = {0};
+            switch (d)
+            {
+            case 1: // UPRIGHT
+                for (int i = 0; i < 8; i++)
+                    rotatedBitmap[i] = charBitmap[i];
+                break;
+            case 2: // UPLEFT
+                for (int i = 0; i < 8; i++)
+                    for (int j = 0; j < 8; j++)
+                        if (charBitmap[j] & (1 << i))
+                            rotatedBitmap[i] |= (1 << (7 - j));
+                break;
+            case 4: // DOWNLEFT
+                for (int i = 0; i < 8; i++)
+                    for (int j = 0; j < 8; j++)
+                        if (charBitmap[i] & (1 << j))
+                            rotatedBitmap[7 - i] |= (1 << (7 - j));
+                break;
+            case 3: // DOWNRIGHT
+                for (int i = 0; i < 8; i++)
+                    for (int j = 0; j < 8; j++)
+                        if (charBitmap[j] & (1 << i))
+                            rotatedBitmap[7 - i] |= (1 << j);
+                break;
+            }
+
+            // Draw the rotated bitmap to the buffer
+            for (int i = 0; i < 8; i++)
+            {
+                for (int j = 0; j < 8; j++)
+                {
+                    int buffer_index = (current_x + j) + ((current_y + i) / 8) * 128;
+
+                    if (rotatedBitmap[j] & (1 << i))
+                        buffer[buffer_index] |= (1 << ((current_y + i) % 8));
+                    else
+                        buffer[buffer_index] &= ~(1 << ((current_y + i) % 8));
+                }
+            }
+        }
+    }
 }
 
 void drawCharToBuffer(uint8_t *buffer, int x, int y, char c)
@@ -414,7 +546,8 @@ void snakeGame()
 	}
 
 	ESP_LOGI(TAG, "len: %d ", snake.node);
-	for (int i = 0; i < snake.node; i++){
+	for (int i = 0; i < snake.node; i++)
+	{
 		ESP_LOGI(TAG, "%d %d %d\n", i, snake.x[i], snake.y[i]);
 	}
 }
@@ -645,9 +778,11 @@ void draw()
 	memset(buffer, 0, sizeof(buffer)); // Clear buffer
 	for (i = 0; i < snake.node; i++)
 		updateBuffer(buffer, snake.x[i], snake.y[i], SnakeBody);
-	updateHead(buffer, snake.x[0], snake.y[0], SnakeHead, dir);
-	if(snake.node > 2)
+	updateHead(buffer, snake.x[0], snake.y[0], SnakeHead);
+	if (snake.node > 2)
 		updateTail(buffer, snake.x[snake.node - 1], snake.y[snake.node - 1], SnakeTail);
+	if (snake.node > 3)
+		updateCorner(buffer, SnakeCorner);
 	foodElement(food.x, food.y, buffer);
 
 	char text[17];
