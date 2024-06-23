@@ -1,4 +1,5 @@
 // Code by Nguyen Minh Tri
+// Fix by Cao Quang Minh
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -7,13 +8,15 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "driver/gpio.h"
-#include "driver/ledc.h"
+
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "esp_err.h"
 
 #include "nvs.h"
 #include "nvs_flash.h"
 
+#include "driver/ledc.h"
 #include "buzzer.h"
 #include "pitch.h"
 #include "melody.h"
@@ -49,7 +52,7 @@ int score = 0;
 int highScore;
 int gamespeed;
 int isGameOver = false;
-int i;
+int pause = false;
 int dir;
 SSD1306_t dev;
 uint8_t buffer[128 * 64 / 8];
@@ -71,14 +74,15 @@ typedef struct SNAKE
 FOOD food;
 SNAKE snake;
 
+// bit map bị lật ngược chiều 90 độ
 uint8_t SnakeHead[] = {
-	0b11111111,
+	0b00101000,
+	0b00010000,
+	0b00010000,
+	0b00111100,
+	0b01111110,
+	0b11011011,
 	0b10011001,
-	0b10011001,
-	0b11111111,
-	0b11111111,
-	0b11111111,
-	0b11111111,
 	0b11111111};
 
 uint8_t SnakeTail[] = {
@@ -122,6 +126,28 @@ uint8_t foodEle[] = {
 	0b00111100,
 };
 
+uint8_t blank[] = {
+	0x00,
+	0x00,
+	0x00,
+	0x00,
+	0x00,
+	0x00,
+	0x00,
+	0x00};
+
+void erase(int x, int y, uint8_t *buffer)
+{
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 8; j++)
+		{
+			int buffer_index = (x + j) + ((y + i) / 8) * 128;
+			buffer[buffer_index] &= ~(1 << ((y + i) % 8));
+		}
+	}
+}
+
 void foodElement(int x, int y, uint8_t *buffer)
 {
 	for (int i = 0; i < 8; i++)
@@ -148,6 +174,22 @@ void updateBuffer(uint8_t *buffer, int x, int y, uint8_t *charBitmap)
 				int buffer_index = (x + j) + ((y + i) / 8) * 128;
 				buffer[buffer_index] |= (1 << ((y + i) % 8));
 			}
+		}
+	}
+}
+
+void updateBufferOverLap(uint8_t *buffer, int x, int y, uint8_t *charBitmap)
+{
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 8; j++)
+		{
+			int buffer_index = (x + j) + ((y + i) / 8) * 128;
+
+			if (charBitmap[j] & (1 << i))
+				buffer[buffer_index] |= (1 << ((y + i) % 8));
+			else
+				buffer[buffer_index] &= ~(1 << ((y + i) % 8));
 		}
 	}
 }
@@ -225,7 +267,7 @@ void updateTail(uint8_t *buffer, int x, int y, uint8_t *charBitmap)
 {
 	int d = RIGHT;
 	int width = 128;
-	int height = 56;
+	int height = 64;
 
 	// Determine the direction of the tail
 	if (snake.y[snake.node - 1] == snake.y[snake.node - 2])
@@ -290,7 +332,6 @@ void updateTail(uint8_t *buffer, int x, int y, uint8_t *charBitmap)
 					rotatedBitmap[7 - i] |= (1 << j);
 		break;
 	}
-
 	for (int i = 0; i < 8; i++)
 	{
 		for (int j = 0; j < 8; j++)
@@ -308,106 +349,105 @@ void updateTail(uint8_t *buffer, int x, int y, uint8_t *charBitmap)
 void updateCorner(uint8_t *buffer, uint8_t *charBitmap)
 {
 	int width = 128;
-    int height = 56;
-    int node_size = 8;
-    int d = -1; // Initialize direction variable
+	int height = 64;
+	int node_size = 8;
 
-    // Iterate through the snake's body to identify corner nodes
-    for (int i = 1; i < snake.node - 1; i++)
-    {
-        int current_x = snake.x[i];
-        int current_y = snake.y[i];
-        int next_x = snake.x[i + 1];
-        int next_y = snake.y[i + 1];
-        int prev_x = snake.x[i - 1];
-        int prev_y = snake.y[i - 1];
+	// Iterate through the snake's body to identify corner nodes
+	for (int i = 2; i < snake.node - 1; i++)
+	{
+		int current_x = snake.x[i];
+		int current_y = snake.y[i];
+		int next_x = snake.x[i + 1];
+		int next_y = snake.y[i + 1];
+		int prev_x = snake.x[i - 1];
+		int prev_y = snake.y[i - 1];
 
-        // Check if the current node is a corner
-        if ((current_x != next_x && current_y != prev_y) || (current_x != prev_x && current_y != next_y))
-        {
-            // Determine the direction from the previous node to the current node
-            int from_direction;
-            if (current_x == (prev_x + node_size) % width)
-                from_direction = RIGHT;
-            else if (current_x == (prev_x - node_size + width) % width)
-                from_direction = LEFT;
-            else if (current_y == (prev_y + node_size) % height)
-                from_direction = DOWN;
-            else
-                from_direction = UP;
+		// Check if the current node is a corner
+		if ((current_x != next_x && current_y != prev_y) || (current_x != prev_x && current_y != next_y))
+		{
+			// Determine the direction from the previous node to the current node
+			int from_direction;
+			if (current_x == (prev_x + node_size) % width)
+				from_direction = RIGHT;
+			else if (current_x == (prev_x - node_size + width) % width)
+				from_direction = LEFT;
+			else if (current_y == (prev_y + node_size) % height)
+				from_direction = DOWN;
+			else
+				from_direction = UP;
 
-            // Determine the direction from the current node to the next node
-            int to_direction;
-            if (next_x == (current_x + node_size) % width)
-                to_direction = RIGHT;
-            else if (next_x == (current_x - node_size + width) % width)
-                to_direction = LEFT;
-            else if (next_y == (current_y + node_size) % height)
-                to_direction = DOWN;
-            else
-                to_direction = UP;
+			// Determine the direction from the current node to the next node
+			int to_direction;
+			if (next_x == (current_x + node_size) % width)
+				to_direction = RIGHT;
+			else if (next_x == (current_x - node_size + width) % width)
+				to_direction = LEFT;
+			else if (next_y == (current_y + node_size) % height)
+				to_direction = DOWN;
+			else
+				to_direction = UP;
 
-            // Determine the type of corner and set direction
-            if (from_direction == RIGHT && to_direction == DOWN)
-                d = 4; // DOWNRIGHT x
-            else if (from_direction == RIGHT && to_direction == UP)
-                d = 1; // UPRIGHT v
-            else if (from_direction == LEFT && to_direction == DOWN)
-                d = 4; // DOWNLEFT v
-            else if (from_direction == LEFT && to_direction == UP)
-                d = 1; // UPLEFT x
-            else if (from_direction == UP && to_direction == RIGHT)
-                d = 1; // UPRIGHT
-            else if (from_direction == UP && to_direction == LEFT)
-                d = 2; // UPLEFT v
-            else if (from_direction == DOWN && to_direction == RIGHT)
-                d = 3; // DOWNRIGHT v
-            else if (from_direction == DOWN && to_direction == LEFT)
-                d = 4; // DOWNLEFT
+			// Determine the type of corner and set direction
+			int d = -1;
+			if (from_direction == RIGHT && to_direction == DOWN)
+				d = 1; // RIGHTDOWN = UPLEFT
+			else if (from_direction == RIGHT && to_direction == UP)
+				d = 4; // RIGHTUP = DOWNLEFT
+			else if (from_direction == LEFT && to_direction == DOWN)
+				d = 2; // LEFTDOWN = UPRIGHT
+			else if (from_direction == LEFT && to_direction == UP)
+				d = 3; // LEFTUP = DOWNRIGHT
+			else if (from_direction == UP && to_direction == RIGHT)
+				d = 2; // UPRIGHT = LEFTDOWN
+			else if (from_direction == UP && to_direction == LEFT)
+				d = 1; // UPLEFT = RIGHTDOWN
+			else if (from_direction == DOWN && to_direction == RIGHT)
+				d = 3; // DOWNRIGHT = LEFTUP
+			else if (from_direction == DOWN && to_direction == LEFT)
+				d = 4; // DOWNLEFT = RIGHTUP
 
-            // Create rotated bitmap based on direction
-            uint8_t rotatedBitmap[8] = {0};
-            switch (d)
-            {
-            case 1: // UPRIGHT
-                for (int i = 0; i < 8; i++)
-                    rotatedBitmap[i] = charBitmap[i];
-                break;
-            case 2: // UPLEFT
-                for (int i = 0; i < 8; i++)
-                    for (int j = 0; j < 8; j++)
-                        if (charBitmap[j] & (1 << i))
-                            rotatedBitmap[i] |= (1 << (7 - j));
-                break;
-            case 4: // DOWNLEFT
-                for (int i = 0; i < 8; i++)
-                    for (int j = 0; j < 8; j++)
-                        if (charBitmap[i] & (1 << j))
-                            rotatedBitmap[7 - i] |= (1 << (7 - j));
-                break;
-            case 3: // DOWNRIGHT
-                for (int i = 0; i < 8; i++)
-                    for (int j = 0; j < 8; j++)
-                        if (charBitmap[j] & (1 << i))
-                            rotatedBitmap[7 - i] |= (1 << j);
-                break;
-            }
+			// Create rotated bitmap based on direction
+			uint8_t rotatedBitmap[8] = {0};
+			switch (d)
+			{
+			case 1: // UPLEFT = RIGHT DOWN
+				for (int i = 0; i < 8; i++)
+					for (int j = 0; j < 8; j++)
+						if (charBitmap[j] & (1 << i))
+							rotatedBitmap[i] |= (1 << (7 - j));
+				break;
+			case 2: // UPRIGHT = LEFTDOWN
+				for (int i = 0; i < 8; i++)
+					rotatedBitmap[i] = charBitmap[i];
+				break;
+			case 3: // DOWNRIGHT = LEFTUP
+				for (int i = 0; i < 8; i++)
+					for (int j = 0; j < 8; j++)
+						if (charBitmap[j] & (1 << i))
+							rotatedBitmap[7 - i] |= (1 << j);
+				break;
+			case 4: // DOWNLEFT = RIGHTUP
+				for (int i = 0; i < 8; i++)
+					for (int j = 0; j < 8; j++)
+						if (charBitmap[i] & (1 << j))
+							rotatedBitmap[7 - i] |= (1 << (7 - j));
+				break;
+			}
+			// Draw the rotated bitmap to the buffer
+			for (int i = 0; i < 8; i++)
+			{
+				for (int j = 0; j < 8; j++)
+				{
+					int buffer_index = (current_x + j) + ((current_y + i) / 8) * 128;
 
-            // Draw the rotated bitmap to the buffer
-            for (int i = 0; i < 8; i++)
-            {
-                for (int j = 0; j < 8; j++)
-                {
-                    int buffer_index = (current_x + j) + ((current_y + i) / 8) * 128;
-
-                    if (rotatedBitmap[j] & (1 << i))
-                        buffer[buffer_index] |= (1 << ((current_y + i) % 8));
-                    else
-                        buffer[buffer_index] &= ~(1 << ((current_y + i) % 8));
-                }
-            }
-        }
-    }
+					if (rotatedBitmap[i] & (1 << j))
+						buffer[buffer_index] |= (1 << ((current_y + i) % 8));
+					else
+						buffer[buffer_index] &= ~(1 << ((current_y + i) % 8));
+				}
+			}
+		}
+	}
 }
 
 void drawCharToBuffer(uint8_t *buffer, int x, int y, char c)
@@ -426,7 +466,7 @@ void drawCharToBuffer(uint8_t *buffer, int x, int y, char c)
 	else
 		return; // Character not supported
 
-	updateBuffer(buffer, x, y, charBitmap);
+	updateBufferOverLap(buffer, x, y, charBitmap);
 }
 
 void drawStringToBuffer(uint8_t *buffer, int x, int y, const char *str)
@@ -473,9 +513,18 @@ static void IRAM_ATTR buttonRightISR(void *arg)
 	dir = RIGHT;
 }
 
+#define DEBOUNCE_TIME_MS 200
+int64_t last_press_time = 0;
 static void IRAM_ATTR buttonResetISR(void *arg)
 {
-	isGameOver = false;
+	int64_t current_time = esp_timer_get_time() / 1000;
+
+	if (current_time - last_press_time > DEBOUNCE_TIME_MS)
+	{
+		last_press_time = current_time;
+		isGameOver = false;
+		pause = !pause;
+	}
 }
 
 int isFoodOnSnake()
@@ -506,7 +555,7 @@ void snakeGame()
 		break;
 	case UP:
 		snake.y[0] -= 8;
-		if (snake.y[0] < 8)
+		if (snake.y[0] < 0)
 			snake.y[0] = 56;
 		break;
 	case LEFT:
@@ -517,7 +566,7 @@ void snakeGame()
 	case DOWN:
 		snake.y[0] += 8;
 		if (snake.y[0] > 56)
-			snake.y[0] = 8;
+			snake.y[0] = 0;
 		break;
 	}
 
@@ -525,12 +574,12 @@ void snakeGame()
 	if ((snake.x[0] == food.x) && (snake.y[0] == food.y))
 	{
 		snake.node++;
-		score += 1;
+		score++;
 		gamespeed = 20 - ((score / 5) * 2);
 		ESP_LOGI(TAG, "Game speed %d", gamespeed);
-		play_tone(1000, 100);
+		play_tone(1000, 50);
 		generateFood();
-		ESP_LOGI(TAG, "%d\n", snake.node);
+		// ESP_LOGI(TAG, "%d\n", snake.node);
 	}
 
 	// Checks for collision with the body
@@ -539,37 +588,27 @@ void snakeGame()
 			isGameOver = true;
 
 	// update snake body
-	for (i = snake.node - 1; i > 0; i--)
+	for (int i = snake.node; i > 0; i--)
 	{
 		snake.x[i] = snake.x[i - 1];
 		snake.y[i] = snake.y[i - 1];
 	}
 
-	ESP_LOGI(TAG, "len: %d ", snake.node);
-	for (int i = 0; i < snake.node; i++)
-	{
-		ESP_LOGI(TAG, "%d %d %d\n", i, snake.x[i], snake.y[i]);
-	}
+	// ESP_LOGI(TAG, "len: %d ", snake.node);
+	// for (int i = 0; i < snake.node; i++)
+	// 	ESP_LOGI(TAG, "%d %d %d\n", i, snake.x[i], snake.y[i]);
 }
 
 void key()
 {
 	if (dir == DOWN && snake.dir != UP)
-	{
 		snake.dir = DOWN;
-	}
 	if (dir == RIGHT && snake.dir != LEFT)
-	{
 		snake.dir = RIGHT;
-	}
 	if (dir == LEFT && snake.dir != RIGHT)
-	{
 		snake.dir = LEFT;
-	}
 	if (dir == UP && snake.dir != DOWN)
-	{
 		snake.dir = UP;
-	}
 }
 
 void setup()
@@ -594,8 +633,9 @@ void setup()
 
 	ssd1306_contrast(&dev, 0xff);
 	ssd1306_clear_screen(&dev, false);
-	ssd1306_display_text(&dev, 4, "   SNAKEGAME", 12, false);
+	ssd1306_display_text(&dev, 4, "  SNAKE GAME", 12, false);
 	vTaskDelay(pdMS_TO_TICKS(1000));
+
 	buzzer_init(BUZZER_PIN);
 
 	button_init(BUTTON_UP_PIN, buttonUpISR, NULL);
@@ -614,15 +654,16 @@ void setup()
 	snake.y[0] = 32;
 	snake.x[1] = 64;
 	snake.y[1] = 32;
+	snake.x[2] = 56;
+	snake.y[2] = 32;
 	snake.dir = RIGHT;
-	snake.node = 2;
+	snake.node = 3;
 
 	gamespeed = 20;
 	ESP_LOGI(TAG, "Game speed %d", gamespeed);
 	ssd1306_clear_screen(&dev, false);
 }
 
-// Function to save high score
 void save_high_score(int score)
 {
 	// Initialize NVS
@@ -651,7 +692,7 @@ void save_high_score(int score)
 		switch (err)
 		{
 		case ESP_OK:
-			ESP_LOGI(TAG, "Current high score = %d", high_score);
+			// ESP_LOGI(TAG, "Current high score = %d", high_score);
 			break;
 		case ESP_ERR_NVS_NOT_FOUND:
 			ESP_LOGI(TAG, "The value is not initialized yet!");
@@ -687,7 +728,6 @@ void save_high_score(int score)
 	}
 }
 
-// Function to get the high score
 int get_high_score()
 {
 	// Initialize NVS
@@ -716,7 +756,7 @@ int get_high_score()
 		switch (err)
 		{
 		case ESP_OK:
-			ESP_LOGI(TAG, "Current high score = %d", high_score);
+			// ESP_LOGI(TAG, "Current high score = %d", high_score);
 			break;
 		case ESP_ERR_NVS_NOT_FOUND:
 			ESP_LOGI(TAG, "The value is not initialized yet!");
@@ -749,8 +789,10 @@ void resetGame()
 	snake.y[0] = 32;
 	snake.x[1] = 64;
 	snake.y[1] = 32;
+	snake.x[2] = 56;
+	snake.y[2] = 32;
 	snake.dir = RIGHT;
-	snake.node = 2;
+	snake.node = 3;
 
 	// Reset game speed
 	gamespeed = 20;
@@ -775,26 +817,27 @@ void gameOver()
 
 void draw()
 {
-	memset(buffer, 0, sizeof(buffer)); // Clear buffer
-	for (i = 0; i < snake.node; i++)
-		updateBuffer(buffer, snake.x[i], snake.y[i], SnakeBody);
-	updateHead(buffer, snake.x[0], snake.y[0], SnakeHead);
-	if (snake.node > 2)
-		updateTail(buffer, snake.x[snake.node - 1], snake.y[snake.node - 1], SnakeTail);
-	if (snake.node > 3)
-		updateCorner(buffer, SnakeCorner);
-	foodElement(food.x, food.y, buffer);
+	ssd1306_get_buffer(&dev, buffer);
 
-	char text[17];
-	sprintf(text, "Score: %d", score);
-	drawStringToBuffer(buffer, 0, 0, text);
+	erase(snake.x[snake.node], snake.y[snake.node], buffer);
+
+	updateBuffer(buffer, snake.x[2], snake.y[2], SnakeBody);
+	updateTail(buffer, snake.x[snake.node - 1], snake.y[snake.node - 1], SnakeTail);
+	updateCorner(buffer, SnakeCorner);
+	updateHead(buffer, snake.x[0], snake.y[0], SnakeHead);
+
+	foodElement(food.x, food.y, buffer);
+	// update score
+	char text[4];
+	sprintf(text, "%d", score);
+	drawStringToBuffer(buffer, 1, 1, text);
 
 	ssd1306_set_buffer(&dev, buffer);
-	_ssd1306_line(&dev, 0, 8, 127, 8, false);
-	_ssd1306_line(&dev, 0, 8, 0, 63, false);
-	_ssd1306_line(&dev, 127, 8, 127, 63, false);
-	_ssd1306_line(&dev, 0, 63, 127, 63, false);
 
+	_ssd1306_line(&dev, 0, 0, 127, 0, false);
+	_ssd1306_line(&dev, 0, 0, 0, 63, false);
+	_ssd1306_line(&dev, 127, 0, 127, 63, false);
+	_ssd1306_line(&dev, 0, 63, 127, 63, false);
 	ssd1306_show_buffer(&dev);
 }
 
@@ -803,22 +846,34 @@ void app_main(void)
 	// Set logging level for the TAG to INFO
 	esp_log_level_set(TAG, ESP_LOG_INFO);
 	setup();
+
 	while (true)
 	{
 		while (!isGameOver)
 		{
-			draw();
-			key();
-			snakeGame();
-			vTaskDelay(gamespeed);
+			if (!pause)
+			{
+				draw();
+				key();
+				snakeGame();
+
+				vTaskDelay(gamespeed);
+			}
+			else
+			{
+				// Nếu trò chơi đang tạm dừng, chờ cho đến khi nút được nhấn lại
+				vTaskDelay(100 / portTICK_PERIOD_MS); // Giảm tần suất kiểm tra trạng thái tạm dừng
+			}
 		}
 
-		ssd1306_clear_screen(&dev, false);
-		gameOver();
-		play_melody_alt(endSound, endSoundD, 8);
-		while (isGameOver)
+		if (isGameOver)
+		{
+			ssd1306_clear_screen(&dev, false);
 			gameOver();
-		resetGame();
-		ESP_LOGI(TAG, "Game Over triggered. Resetting game...");
+			play_melody_alt(endSound, endSoundD, 8);
+			while (isGameOver)
+				gameOver();
+			resetGame();
+		}
 	}
 }
