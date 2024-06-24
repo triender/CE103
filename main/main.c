@@ -93,27 +93,37 @@ uint8_t SnakeTail[] = {
 	0b00011000,
 	0b00111100,
 	0b00111110,
-	0b01111111};
+	0b01111110};
 
 uint8_t SnakeCorner[] = {
-	0b11000000,
+	0b00000000,
 	0b11110000,
 	0b11111100,
 	0b11111100,
 	0b11111110,
 	0b11111110,
-	0b11111111,
-	0b11111111};
+	0b11111110,
+	0b01111110};
+
+// uint8_t SnakeBody[] = {
+// 	0b01111110,
+// 	0b01111010,
+// 	0b01111010,
+// 	0b01111110,
+// 	0b01101110,
+// 	0b01101110,
+// 	0b01101110,
+// 	0b01111110};
 
 uint8_t SnakeBody[] = {
-	0b11111111,
-	0b11111111,
-	0b11111111,
-	0b11111111,
-	0b11111111,
-	0b11111111,
-	0b11111111,
-	0b11111111};
+	0b00111111,
+	0b01111110,
+	0b01111110,
+	0b11111100,
+	0b11111100,
+	0b01111110,
+	0b01111110,
+	0b00111111};
 
 uint8_t foodEle[] = {
 	0b00001111,
@@ -302,6 +312,79 @@ void updateTail(uint8_t *buffer, int x, int y, uint8_t *charBitmap)
 	}
 	uint8_t rotatedBitmap[8] = {0};
 
+	// Rotate bitmap based on direction
+	switch (d)
+	{
+	case RIGHT:
+		// No rotation needed for RIGHT
+		for (int i = 0; i < 8; i++)
+			rotatedBitmap[i] = charBitmap[i];
+		break;
+	case UP:
+		// Rotate 90 degrees clockwise
+		for (int i = 0; i < 8; i++)
+			for (int j = 0; j < 8; j++)
+				if (charBitmap[j] & (1 << i))
+					rotatedBitmap[i] |= (1 << (7 - j));
+		break;
+	case LEFT:
+		// Rotate 180 degrees
+		for (int i = 0; i < 8; i++)
+			for (int j = 0; j < 8; j++)
+				if (charBitmap[i] & (1 << j))
+					rotatedBitmap[7 - i] |= (1 << (7 - j));
+		break;
+	case DOWN:
+		// Rotate 90 degrees counter-clockwise
+		for (int i = 0; i < 8; i++)
+			for (int j = 0; j < 8; j++)
+				if (charBitmap[j] & (1 << i))
+					rotatedBitmap[7 - i] |= (1 << j);
+		break;
+	}
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 8; j++)
+		{
+			int buffer_index = (x + j) + ((y + i) / 8) * 128;
+
+			if (rotatedBitmap[j] & (1 << i))
+				buffer[buffer_index] |= (1 << ((y + i) % 8));
+			else
+				buffer[buffer_index] &= ~(1 << ((y + i) % 8));
+		}
+	}
+}
+
+void updateBody(uint8_t *buffer, int x, int y, uint8_t *charBitmap)
+{
+	int d = -1;
+	int vflip = true;
+	int hflip = true;
+	int current_x = snake.x[2];
+	int current_y = snake.y[2];
+	int next_x = snake.x[3];
+	int next_y = snake.y[3];
+	int prev_x = snake.x[1];
+	int prev_y = snake.y[1];
+	uint8_t rotatedBitmap[8] = {0};
+
+	if (current_x == next_x && current_x == prev_x)
+	{
+		if (hflip)
+			d = UP;
+		else
+			d = DOWN;
+		hflip = !hflip;
+	}
+	else if (current_y == next_y && current_y == prev_y)
+	{
+		if (vflip)
+			d = RIGHT;
+		else
+			d = LEFT;
+		vflip = !vflip;
+	}
 	// Rotate bitmap based on direction
 	switch (d)
 	{
@@ -821,7 +904,7 @@ void draw()
 
 	erase(snake.x[snake.node], snake.y[snake.node], buffer);
 
-	updateBuffer(buffer, snake.x[2], snake.y[2], SnakeBody);
+	updateBody(buffer, snake.x[2], snake.y[2], SnakeBody);
 	updateTail(buffer, snake.x[snake.node - 1], snake.y[snake.node - 1], SnakeTail);
 	updateCorner(buffer, SnakeCorner);
 	updateHead(buffer, snake.x[0], snake.y[0], SnakeHead);
@@ -853,7 +936,11 @@ void app_main(void)
 		{
 			if (!pause)
 			{
+				uint64_t start = esp_timer_get_time();
 				draw();
+				uint64_t end = esp_timer_get_time();
+				uint64_t time = end - start;
+				ESP_LOGI("TIME", "time delay: %lld", time);
 				key();
 				snakeGame();
 
