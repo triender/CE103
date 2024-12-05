@@ -706,10 +706,10 @@ void setup()
 	ESP_ERROR_CHECK(ret);
 	// Init display
 	ESP_LOGI(TAG, "INTERFACE is i2c");
-	ESP_LOGI(TAG, "CONFIG_SDA_GPIO=%d", CONFIG_SDA_GPIO);
-	ESP_LOGI(TAG, "CONFIG_SCL_GPIO=%d", CONFIG_SCL_GPIO);
-	ESP_LOGI(TAG, "CONFIG_RESET_GPIO=%d", CONFIG_RESET_GPIO);
-	i2c_master_init(&dev, CONFIG_SDA_GPIO, CONFIG_SCL_GPIO, CONFIG_RESET_GPIO);
+	// ESP_LOGI(TAG, "CONFIG_SDA_GPIO=%d", CONFIG_SDA_GPIO);
+	// ESP_LOGI(TAG, "CONFIG_SCL_GPIO=%d", CONFIG_SCL_GPIO);
+	// ESP_LOGI(TAG, "CONFIG_RESET_GPIO=%d", CONFIG_RESET_GPIO);
+	i2c_master_init(&dev, 21, 22, -1);
 
 	ESP_LOGI(TAG, "Panel is 128x64");
 	ssd1306_init(&dev, 128, 64);
@@ -957,7 +957,7 @@ void app_main(void)
 		{
 			ssd1306_clear_screen(&dev, false);
 			gameOver();
-			play_melody_alt(endSound, endSoundD, 8);
+			play_melody_alt(melody->frequency, melody->frequency, 8);
 			while (isGameOver)
 				gameOver();
 			resetGame();
